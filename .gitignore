@@ -1,4 +1,15 @@
+# R / RStudio
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+# Quarto / render side files
+*_files/
+
+# macOS
+.DS_Store
+
+# temporary files
+*.log
+*.tmp
