@@ -1,0 +1,177 @@
+---
+title: "Coding Sample: Logistic Regression and Model Diagnostics in R"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=1in
+fontsize: 11pt
+execute:
+  warning: false
+  message: false
+---
+
+**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>
+
+## Project Overview
+
+This coding sample demonstrates a structured classification workflow in R using generalized linear models. It includes data preparation, logistic regression, model simplification, diagnostic checks, and comparison of alternative link functions. I selected this sample because it reflects how I approach interpretable modeling: building a reasonable baseline model, evaluating fit, and checking whether conclusions are robust.
+
+- **Language:** R  
+- **Dataset:** Chile voting intention dataset  
+- **Focus:** binary classification, logistic regression, model comparison, diagnostics, interpretation  
+
+## Data and Objective
+
+The Chile dataset contains survey responses on voting intention along with demographic and attitudinal predictors. For this sample, I focus on respondents with binary outcomes ("Y" vs. "N") and examine which variables are associated with voting "yes."
+
+## Data Preparation
+
+I first restricted the analysis to respondents with outcomes of "Y" or "N," converted categorical variables to factors, and created a binary response variable for logistic regression.
+
+```{r}
+library(tidyverse)
+library(car)
+library(MASS)
+
+chile <- read.delim("data/Chile.txt", sep = "\t", header = TRUE)
+
+chile$region    <- factor(chile$region)
+chile$sex       <- factor(chile$sex)
+chile$education <- factor(chile$education)
+chile$vote      <- factor(chile$vote)
+
+dat <- subset(chile, vote %in% c("Y", "N"))
+dat$y <- ifelse(dat$vote == "Y", 1, 0)
+
+str(dat)
+summary(dat)
+```
+
+The filtered dataset contains only binary responses, making it suitable for standard logistic regression. Converting categorical predictors to factors ensures that the model handles group comparisons appropriately.
+
+## Exploratory Checks
+
+Before fitting the model, I examined the outcome distribution and reviewed key predictors to understand the data structure.
+```{r}
+table(dat$vote)
+table(dat$education, dat$vote)
+table(dat$sex, dat$vote)
+
+ggplot(dat, aes(x = statusquo, y = y)) +
+  geom_jitter(height = 0.05, alpha = 0.3) +
+  labs(x = "Status Quo", y = "Binary Vote Outcome")
+
+ggplot(dat, aes(x = education, fill = vote)) +
+  geom_bar(position = "fill") +
+  labs(y = "Proportion", fill = "Vote")
+```
+Initial exploration suggested that support for "yes" increased with statusquo, and that voting patterns differed across demographic groups, especially education.
+
+## Logistic Regression
+
+I first fit a logistic regression model with demographic predictors and an interaction between statusquo and education. I then used likelihood-ratio tests to identify a simpler model that retained the strongest predictors.
+```{r}
+#| echo: true
+#| results: hide
+m_full <- glm(
+  y ~ statusquo + age + sex + education + income + statusquo:education,
+  data = dat,
+  family = binomial(link = "logit")
+)
+
+Anova(m_full, type = 2, test.statistic = "LR")
+```
+Based on likelihood-ratio tests, statusquo was the strongest predictor. Sex and education also contributed meaningfully, while age and income added less evidence after accounting for the other variables.
+
+```{r}
+#| echo: true
+#| results: hide
+m_final <- glm(
+  y ~ statusquo + sex + education,
+  data = dat,
+  family = binomial(link = "logit")
+)
+
+summary(m_final)
+```
+
+The reduced model preserved the main signal in the data while remaining easier to interpret. Higher values of statusquo were associated with substantially higher odds of voting "yes," and the estimated effects of sex and education suggested meaningful group differences in voting intention.
+
+## Odds-Ratio Interpretation
+
+To make the fitted coefficients easier to interpret, I converted the estimates and confidence intervals from the log-odds scale to odds ratios.
+```{r}
+coef_table <- cbind(
+  Estimate = coef(m_final),
+  exp(coef(m_final))
+)
+colnames(coef_table)[2] <- "OddsRatio"
+
+wald_ci <- confint.default(m_final)
+or_ci   <- exp(wald_ci)
+
+coef_table
+or_ci
+```
+Presenting results as odds ratios helps translate the fitted model into more intuitive effect sizes. The main conclusions were consistent across coefficient estimates and interval summaries.
+
+## Diagnostic Checks
+
+I evaluated model adequacy using deviance residuals, studentized residuals, Cook’s distance, and leverage values.
+```{r}
+par(mfrow = c(2, 2))
+
+plot(fitted(m_final), residuals(m_final, type = "deviance"),
+     xlab = "Fitted values", ylab = "Deviance residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, lty = 2)
+
+qqPlot(rstudent(m_final), main = "QQ Plot of Studentized Residuals")
+
+plot(cooks.distance(m_final), type = "h",
+     ylab = "Cook's Distance", main = "Influence by Observation")
+
+h <- hatvalues(m_final)
+plot(h, type = "h", ylab = "Leverage", main = "Leverage Values")
+abline(h = 2 * length(coef(m_final)) / nrow(dat), lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+The diagnostics did not suggest a severe lack of fit. A small number of observations appeared more influential than others, but there was no evidence that the main findings were driven by a single problematic point.
+
+## Alternative Link Functions
+
+Finally, I compared the logistic model with probit, complementary log-log, and cauchit links to check whether the overall conclusions depended strongly on the link choice.
+```{r}
+form <- y ~ statusquo + sex + education
+
+m_logit   <- glm(form, data = dat, family = binomial(link = "logit"))
+m_probit  <- glm(form, data = dat, family = binomial(link = "probit"))
+m_cloglog <- glm(form, data = dat, family = binomial(link = "cloglog"))
+m_cauchit <- glm(form, data = dat, family = binomial(link = "cauchit"))
+
+link_compare <- data.frame(
+  Link = c("logit", "probit", "cloglog", "cauchit"),
+  ResidualDeviance = c(
+    deviance(m_logit),
+    deviance(m_probit),
+    deviance(m_cloglog),
+    deviance(m_cauchit)
+  ),
+  AIC = c(
+    AIC(m_logit),
+    AIC(m_probit),
+    AIC(m_cloglog),
+    AIC(m_cauchit)
+  )
+)
+
+link_compare
+```
+The logit and probit links performed similarly, while the complementary log-log and cauchit links fit less well. I retained the logit model because it provided strong fit and straightforward interpretation.
+
+## Key Takeaways
+
+This sample highlights the kind of work I most enjoy: preparing real-world data for modeling, building interpretable statistical models, and checking whether conclusions hold up under diagnostic scrutiny. It reflects the careful and reproducible analytical approach I aim to bring to research-oriented data work.

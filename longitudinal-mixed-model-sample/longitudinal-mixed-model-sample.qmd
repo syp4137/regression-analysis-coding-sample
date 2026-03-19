@@ -1,0 +1,149 @@
+---
+title: "Coding Sample: Longitudinal Mixed-Effects Modeling in R"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=1in
+fontsize: 11pt
+execute:
+  warning: false
+  message: false
+---
+
+**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>
+
+## Project Overview
+
+This coding sample demonstrates a longitudinal modeling workflow in R using linear mixed-effects models. The analysis examines how body-fat trajectories change before and after menarche, using repeated measurements from adolescent girls. I selected this sample because it reflects how I approach hierarchical data: structuring time carefully, fitting interpretable mixed models, and comparing random-effects specifications to determine which sources of variation are supported by the data.
+
+- **Language:** R  
+- **Dataset:** MIT Growth and Development Study (Phillips data)  
+- **Focus:** longitudinal data, piecewise time effects, mixed-effects modeling, random-effects comparison, interpretation  
+
+## Data and Objective
+
+The dataset contains repeated body-fat measurements from 162 girls observed over time. For each subject, the timing of menarche is known, allowing age to be centered relative to that event. Following Laird and Fitzmaurice, I model the trajectory of body fat separately before and after menarche using two time variables:
+
+- `t_minus`: adjusted age before menarche, and 0 afterward  
+- `t_plus`: adjusted age after menarche, and 0 before  
+
+**Objective:** Model body-fat trajectories before and after menarche, and determine which subject-specific random effects are needed to capture individual variation over time.
+
+## Data Preparation
+
+I first prepared the piecewise time variables used in the mixed model.
+
+```{r}
+library(lme4)
+library(dplyr)
+
+phillps <- read.table("data/Phillips.txt", header = TRUE)
+
+phillps <- phillps %>%
+  mutate(
+    t_minus = ifelse(age.adjusted < 0, age.adjusted, 0),
+    t_plus  = ifelse(age.adjusted >= 0, age.adjusted, 0)
+  )
+
+str(phillps)
+summary(phillps[, c("body.fat", "age.adjusted", "t_minus", "t_plus")])
+```
+This parameterization allows the model to estimate different average slopes before and after menarche while preserving a common intercept at the event time.
+
+## Exploratory Analysis
+
+To examine the overall longitudinal pattern, I plotted body fat against adjusted age and added a LOWESS smooth.
+```{r}
+plot(phillps$age.adjusted, phillps$body.fat,
+     xlab = "Adjusted Age",
+     ylab = "Percent Body Fat",
+     main = "Body Fat vs Adjusted Age",
+     pch = 16, cex = 0.5)
+
+lines(lowess(phillps$age.adjusted, phillps$body.fat), lwd = 2)
+abline(v = 0, lty = 2)
+```
+
+The overall trend suggested a changing trajectory around menarche, supporting a piecewise longitudinal model rather than a single linear time effect.
+
+## Mixed-Effects Models
+
+I first fit the full mixed-effects model with random intercepts and separate random slopes for the pre- and post-menarche time variables.
+```{r}
+#| echo: true
+#| results: hide
+m_full <- lmer(
+  body.fat ~ t_minus + t_plus + (1 + t_minus + t_plus | subject),
+  data = phillps,
+  REML = FALSE
+)
+```
+
+I then fit reduced models to test whether both subject-specific slopes were necessary.
+```{r}
+#| echo: true
+#| results: hide
+m_no_plus <- lmer(
+  body.fat ~ t_minus + t_plus + (1 + t_minus | subject),
+  data = phillps,
+  REML = FALSE
+)
+
+m_no_minus <- lmer(
+  body.fat ~ t_minus + t_plus + (1 + t_plus | subject),
+  data = phillps,
+  REML = FALSE
+)
+
+m_int <- lmer(
+  body.fat ~ t_minus + t_plus + (1 | subject),
+  data = phillps,
+  REML = FALSE
+)
+```
+
+These models allow a structured comparison of whether individual girls vary primarily in baseline body fat, in their pre-menarche slope, in their post-menarche slope, or in all three.
+
+## Model Comparison
+
+I compared the nested mixed models using likelihood-ratio tests.
+```{r}
+anova(m_full, m_no_plus)
+anova(m_full, m_no_minus)
+anova(m_no_plus, m_int)
+anova(m_no_minus, m_int)
+```
+The full model fit substantially better than models that removed either the random post-menarche slope or the random pre-menarche slope. In particular, removing the post-menarche random slope significantly worsened fit, and removing the pre-menarche random slope also significantly worsened fit. These comparisons indicate that girls differ not only in baseline body-fat levels, but also in how their trajectories evolve both before and after menarche.
+
+Interpreting the Preferred Model
+
+After selecting the full model, I examined the fixed effects and variance components.
+```{r}
+summary(m_full)
+VarCorr(m_full)
+```
+The fixed-effects structure estimates separate average slopes before and after menarche, while the random-effects structure allows each subject to deviate from the average intercept and both average slopes. This makes the model both substantively meaningful and statistically appropriate for repeated measurements collected at irregular ages.
+
+## Diagnostic Checks
+
+Finally, I examined residual diagnostics for the preferred mixed model.
+```{r}
+par(mfrow = c(1, 2))
+
+plot(fitted(m_full), resid(m_full),
+     xlab = "Fitted values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, lty = 2)
+
+qqnorm(resid(m_full))
+qqline(resid(m_full))
+
+par(mfrow = c(1, 1))
+```
+The diagnostics help assess whether the selected model captures the main longitudinal structure without leaving strong residual patterns unexplained.
+
+## Key Takeaways
+
+This sample highlights the kind of modeling work I most enjoy: structuring repeated-measures data carefully, fitting interpretable mixed-effects models, and comparing competing random-effects structures rather than assuming a default specification. In this analysis, the strongest evidence supported a model with subject-specific baseline levels and separate subject-specific slopes before and after menarche, reflecting meaningful individual heterogeneity in developmental trajectories.

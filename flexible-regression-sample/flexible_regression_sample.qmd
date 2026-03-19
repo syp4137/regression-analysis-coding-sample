@@ -1,0 +1,186 @@
+---
+title: "Coding Sample: Flexible Regression and Additive Modeling in R"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=1in
+fontsize: 11pt
+execute:
+  warning: false
+  message: false
+---
+
+**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>
+
+## Project Overview
+
+This coding sample demonstrates a structured workflow for flexible regression modeling in R. It includes a baseline linear model, a general nonparametric regression model, and an additive regression model (GAM), with comparisons across predictive performance and interpretability. I selected this sample because it reflects how I approach modeling problems when simple linear assumptions may not adequately describe the data.
+
+- **Language:** R  
+- **Dataset:** U.S. state-level SAT math data  
+- **Focus:** nonlinear trends, general nonparametric regression, additive modeling, model comparison, interpretation  
+
+## Data and Objective
+
+This analysis examines state-level predictors of SAT math performance using demographic and educational covariates. The goal is to evaluate whether a standard linear model is sufficient, or whether a more flexible specification better captures the relationship between SAT math scores and the predictors.
+
+**Objective:** Compare linear, general nonparametric, and additive regression approaches, and assess whether allowing nonlinear effects improves model fit and interpretation.
+
+## Data Preparation
+
+I began by inspecting the structure of the dataset and confirming the predictor types. The response variable is `satMath`, and the predictors used in this sample are `region`, `population`, `percentTaking`, and `teacherPay`.
+
+```{r}
+library(car)
+library(np)
+library(mgcv)
+library(splines)
+
+states <- read.table("data/States.txt", header = TRUE)
+
+str(states)
+summary(states[, c("satMath", "region", "population", "percentTaking", "teacherPay")])
+```
+These predictors include both categorical and continuous variables, making the problem well suited for comparing parametric and semiparametric approaches.
+
+## Exploratory Analysis
+
+Before fitting models, I visualized the relationship between SAT math scores and the main continuous predictors. The strongest visual departure from linearity appeared in percentTaking, suggesting that a flexible specification may be helpful.
+```{r}
+par(mfrow = c(1, 3))
+
+plot(states$population, states$satMath,
+     xlab = "Population", ylab = "SAT Math",
+     main = "SAT Math vs Population")
+lines(lowess(states$population, states$satMath), lwd = 2)
+
+plot(states$percentTaking, states$satMath,
+     xlab = "Percent Taking", ylab = "SAT Math",
+     main = "SAT Math vs Percent Taking")
+lines(lowess(states$percentTaking, states$satMath), lwd = 2)
+
+plot(states$teacherPay, states$satMath,
+     xlab = "Teacher Pay", ylab = "SAT Math",
+     main = "SAT Math vs Teacher Pay")
+lines(lowess(states$teacherPay, states$satMath), lwd = 2)
+
+par(mfrow = c(1, 1))
+```
+
+Initial exploration suggested that the relationship with percentTaking was strongly nonlinear and decreasing, while the relationships with population and teacherPay appeared weaker and closer to linear.
+
+## Baseline Linear Model
+
+I first fit a standard linear regression model to establish a baseline for comparison.
+```{r}
+#| echo: true
+#| results: hide
+m_lm <- lm(
+  satMath ~ region + population + percentTaking + teacherPay,
+  data = states
+)
+
+summary(m_lm)
+```
+
+The linear model provides an interpretable starting point, but it assumes a constant linear effect for each continuous predictor. That assumption may be too restrictive if the true relationships are curved or uneven across the predictor range.
+
+## General Nonparametric Regression
+
+I then fit a general nonparametric regression model using only the continuous predictors. This approach allows the data to determine the joint shape of the regression surface without imposing a fixed functional form.
+```{r}
+#| echo: true
+#| results: hide
+d_np <- states[, c("satMath", "population", "percentTaking", "teacherPay")]
+
+bw <- npregbw(
+  satMath ~ population + percentTaking + teacherPay,
+  data = d_np
+)
+
+m_np <- npreg(bws = bw)
+```
+
+To evaluate the fit, I compared observed and fitted values and summarized predictive error.
+```{r}
+fitted_np <- fitted(m_np)
+rmse_np <- sqrt(mean((d_np$satMath - fitted_np)^2))
+
+plot(d_np$satMath, fitted_np,
+     xlab = "Observed SAT Math",
+     ylab = "Fitted SAT Math",
+     main = "Observed vs Fitted: Nonparametric Model")
+abline(0, 1, lty = 2)
+rmse_np
+```
+The general nonparametric model fit the data well overall, but it offers limited interpretability because the predictors enter jointly through a flexible multivariate surface.
+
+## Additive Regression Model
+
+To improve interpretability while still allowing nonlinear effects, I fit an additive regression model using smooth terms for the continuous predictors and a parametric term for region.
+```{r}
+#| echo: true
+#| results: hide
+m_gam <- gam(
+  satMath ~ region + s(population) + s(percentTaking) + s(teacherPay),
+  data = states,
+  method = "REML"
+)
+
+summary(m_gam)
+```
+I then visualized the fitted smooth terms.
+```{r}
+plot(m_gam, residuals = TRUE, pch = 16)
+```
+
+The additive model was more interpretable than the fully nonparametric model. The main nonlinear structure came from percentTaking, whose smooth term was highly significant and showed a strong decreasing pattern. In contrast, the smooth terms for population and teacherPay were much weaker and appeared close to linear or flat. Region effects were mostly modest, though some regional differences remained.
+
+## Model Comparison
+
+To compare the three approaches, I summarized predictive error using RMSE.
+```{r}
+rmse_lm  <- sqrt(mean(residuals(m_lm)^2))
+rmse_gam <- sqrt(mean(residuals(m_gam)^2))
+
+comparison <- data.frame(
+  Model = c("Linear model", "General nonparametric model", "Additive model (GAM)"),
+  RMSE = c(rmse_lm, rmse_np, rmse_gam)
+)
+
+comparison
+```
+Allowing nonlinear effects improved predictive performance relative to the linear baseline. In this analysis, RMSE decreased from approximately 15.66 for the linear model to 10.72 for the general nonparametric model and 8.94 for the additive model, indicating that the additive specification provided the best overall fit while remaining interpretable.
+
+## Optional Parametric Comparison
+
+As an additional reference point, I also considered more structured nonlinear alternatives such as polynomial terms and natural splines for percentTaking.
+```{r}
+#| echo: true
+#| results: hide
+m_poly <- lm(
+  satMath ~ region + population + percentTaking + I(percentTaking^2) + I(percentTaking^3) + teacherPay,
+  data = states
+)
+
+m_spline <- lm(
+  satMath ~ region + population + ns(percentTaking, df = 4) + teacherPay,
+  data = states
+)
+
+AIC(m_lm, m_poly, m_spline, m_gam)
+```
+These models provide useful intermediate options, but the GAM offers a particularly good balance between flexibility and interpretability because it lets the data determine the smooth shape directly.
+
+## Diagnostic Checks
+
+Finally, I examined model diagnostics for the additive model.
+```{r}
+gam.check(m_gam)
+```
+The diagnostics supported the conclusion that the GAM captured the main systematic structure in the data. In particular, the flexible specification substantially reduced unexplained pattern relative to the linear model, without requiring a fully black-box approach.
+
+Key Takeaways
+
+This sample highlights the kind of modeling work I most enjoy: starting with a simple baseline model, checking whether its assumptions are adequate, and then introducing flexibility only when the data support it. In this analysis, the strongest evidence for nonlinearity came from SAT participation rate, and the additive model provided the best balance of fit and interpretability. It reflects the careful and reproducible approach I aim to bring to research-oriented data work.

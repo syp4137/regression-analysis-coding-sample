@@ -7,7 +7,10 @@ format:
     geometry: margin=1in
 fontsize: 11pt
 ---
-## 1. Project Overview
+
+**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>
+
+## Project Overview
 
 This coding sample demonstrates a structured regression workflow in R, including data inspection, exploratory analysis, linear model fitting, nested model comparison, and regression diagnostics. I selected this sample because it reflects how I approach applied statistical analysis: organizing data, choosing interpretable models, evaluating fit, and clearly communicating results.
 
@@ -15,11 +18,11 @@ This coding sample demonstrates a structured regression workflow in R, including
 -   Dataset: Duncan occupational prestige dataset
 -   Focus: exploratory analysis, linear regression, model comparison, diagnostics, interpretation
 
-## 2. Data and Objective
+## Data and Objective
 
 Examine how occupational prestige is associated with education and income, and assess whether occupational type improves model fit.
 
-## 3. Exploratory Analysis
+## Exploratory Analysis
 
 I began by inspecting the variables and summarizing the data structure. Initial exploration suggested that prestige was positively associated with education and income, motivating a linear modeling approach.
 
@@ -39,7 +42,8 @@ boxplot(prestige ~ type, data = Duncan,
         xlab = "Occupation Type", ylab = "Prestige")
 ```
 
-## 4. Model Fitting and Comparison
+## Model Fitting and Comparison
+
 I first fit a baseline linear model using education and income, then added occupational type as a categorical predictor. To compare the two nested models, I used a partial F-test along with adjusted $R^2$ and residual standard error.
 
 ```{r}
@@ -50,9 +54,10 @@ summary(m1)
 summary(m2)
 anova(m1, m2)
 ```
+
 The expanded model improved fit substantially, with a significant partial F-test and better adjusted $R^2$. This suggests that occupational type adds explanatory value beyond education and income alone.
 
-## 5. Diagnostic Checks
+## Diagnostic Checks
 
 After selecting the preferred model, I examined studentized residuals to assess model assumptions. The residual distribution was broadly reasonable, though a few observations in the upper tail suggested mild departures from normality.
 
@@ -66,8 +71,6 @@ densityPlot(rs, main = "Studentized Residuals")
 
 Overall, the diagnostics did not suggest a severe violation of assumptions, though a small number of observations warranted attention.
 
-## 6. Key Takeaways
+## Key Takeaways
 
 This sample highlights the kind of work I most enjoy: turning a structured statistical question into a clear analytical workflow, from data inspection through model comparison and diagnostics. It reflects the careful, interpretable, and reproducible approach I aim to bring to research-oriented data work.
-
-**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>

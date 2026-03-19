@@ -1,0 +1,144 @@
+---
+title: "Coding Sample: Censored and Selection Models in R"
+format:
+  pdf:
+    toc: false
+    number-sections: false
+    geometry: margin=1in
+fontsize: 11pt
+execute:
+  warning: false
+  message: false
+---
+
+**Repository:** <https://github.com/syp4137/regression-analysis-coding-sample.git>
+
+## Project Overview
+
+This coding sample demonstrates how I approach regression problems when the response variable is only partially observed. Using first-job prestige data for PhD graduates, I compare three approaches: a naive OLS regression, a Heckman selection model, and a Tobit model for left-censored outcomes. I selected this sample because it reflects an important part of applied statistical work: choosing a model that matches how the data were generated rather than relying on a default regression framework.
+
+- **Language:** R  
+- **Dataset:** Long PhD prestige data  
+- **Focus:** missing outcome handling, selection bias, censoring, model comparison, interpretation  
+
+## Data and Objective
+
+The response variable is the prestige of the department where a PhD graduate obtained a first academic job. Prestige is measured on a 1.00–5.00 scale, but it is unavailable for departments without graduate programs and for departments whose prestige falls below 1.00. Predictors include gender, PhD department prestige, mentor citations, fellowship status, publications, and citations.
+
+**Objective:** Compare alternative regression approaches for partially observed outcomes and determine which framework makes the most substantive sense for this setting.
+
+## Data Preparation
+
+I first loaded the dataset and created versions of the outcome appropriate for the three modeling approaches. In the naive OLS setup, missing prestige values were coded as 1.00. For the selection and censoring models, I preserved the structure of the partially observed outcome.
+
+```{r}
+library(sampleSelection)
+library(AER)
+library(dplyr)
+
+long <- read.table("data/Long-PhDs.txt", header = TRUE)
+
+str(long)
+summary(long)
+
+# OLS version: recode missing prestige as 1.00
+long_a <- long %>%
+  mutate(job = ifelse(is.na(job), 1, job))
+
+# Selection indicator: observed first-job prestige
+long_sel <- long %>%
+  mutate(observed_job = as.integer(!is.na(job)))
+```
+This setup allows the same predictors to be examined under different assumptions about why the outcome is missing or censored.
+
+Baseline OLS Model
+
+As a baseline, I fit an OLS regression after coding all missing prestige values as 1.00.
+```{r}
+#| echo: true
+#| results: hide
+m_ols <- lm(
+  job ~ gender + phd + mentor + fellowship + articles + citations,
+  data = long_a
+)
+
+summary(m_ols)
+```
+This approach is easy to implement, but it treats all unobserved outcomes as though they were truly equal to the lower bound. In this setting, that is unlikely to reflect the real data-generating process and may introduce bias.
+
+## Heckman Selection Model
+
+I next fit a Heckman selection model, which treats the observation of prestige as the result of a separate selection process.
+```{r}
+#| echo: true
+#| results: hide
+m_heckman <- selection(
+  selection = observed_job ~ gender + phd + mentor + fellowship + articles + citations,
+  outcome   = job ~ gender + phd + mentor + fellowship + articles + citations,
+  data = long_sel,
+  method = "ml"
+)
+
+summary(m_heckman)
+```
+
+The Heckman model estimated a strong positive correlation between the selection and outcome error terms, with 
+𝜌
+≈
+0.92
+ρ≈0.92, suggesting that unobserved factors affecting whether prestige is observed are also related to the prestige outcome itself. After selection correction, PhD prestige and fellowship status remained important predictors.
+
+At the same time, this approach relies on strong assumptions for identification. In this analysis, there is no clear exclusion restriction, so the model depends heavily on distributional assumptions. That limitation weakens the substantive case for Heckman despite the strong estimated selection effect.
+
+## Tobit Model for Left-Censoring
+
+Finally, I fit a Tobit model that treats missing values as arising from left-censoring at the lower bound of 1.00.
+```{r}
+#| echo: true
+#| results: hide
+m_tobit <- tobit(
+  job ~ gender + phd + mentor + fellowship + articles + citations,
+  left = 1,
+  data = long_a
+)
+
+summary(m_tobit)
+```
+
+The Tobit model more directly reflects the idea that values below the observable range accumulate at the lower bound. In this fit, PhD prestige, fellowship status, and citations remained positively associated with latent first-job prestige, and male gender also showed stronger evidence than in the OLS fit. There were 99 left-censored observations, indicating a substantial pile-up at the lower limit that a standard linear model does not handle well.
+
+Comparing the Three Approaches
+
+I then compared the coefficient patterns and standard errors across the three models.
+```{r}
+ols_coef    <- coef(m_ols)
+heck_coef   <- coef(m_heckman)
+tobit_coef  <- coef(m_tobit)
+
+coef_compare <- data.frame(
+  term    = names(ols_coef),
+  OLS     = unname(ols_coef),
+  Heckman = unname(heck_coef[names(ols_coef)]),
+  Tobit   = unname(tobit_coef[names(ols_coef)])
+)
+
+coef_compare
+```
+
+Across all three approaches, PhD prestige and fellowship status were consistently important positive predictors. However, the models differ in how they interpret the missing outcomes:
+
+OLS treats missing values as if they were truly observed at 1.00.
+
+Heckman assumes a separate selection mechanism determines whether prestige is observed.
+
+Tobit assumes the latent outcome exists for everyone but is censored below the lower bound.
+
+Among these, the Tobit framework makes the most substantive sense for this dataset because the outcome scale has a meaningful lower boundary, and the data show a pile-up at that boundary. OLS ignores that structure, while Heckman introduces a stronger selection framework that is harder to justify without a clear exclusion restriction.
+
+Interpretation
+
+This analysis highlights how model choice depends on the structure of missingness and censoring, not just on convenience. A naive linear model is often inadequate when the response is partially observed in a systematic way. Here, the Tobit model provided the most defensible compromise between statistical fit and substantive interpretation because it aligned most closely with the observed lower-bound structure of the response.
+
+Key Takeaways
+
+This sample highlights the kind of work I most enjoy: looking beyond a default model, asking how the outcome was actually generated, and choosing a method that better matches the structure of the data. It reflects the careful and model-aware approach I aim to bring to research-oriented data work.
